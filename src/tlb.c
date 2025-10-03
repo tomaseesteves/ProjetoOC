@@ -57,13 +57,10 @@ void tlb_invalidate(va_t virtual_page_number)
   {
     if (tlb_l1[i].virtual_page_number == virtual_page_number)
     {
-      tlb_l1_hits++;
-      tlb_l1[i].last_access = get_time();
       tlb_l1[i].valid = false;
       tlb_l1_invalidations++;
     }
   }
-  tlb_l1_misses++;
 }
 
 pa_dram_t tlb_translate(va_t virtual_address, op_t op)
