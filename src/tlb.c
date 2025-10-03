@@ -10,7 +10,8 @@
 #include "memory.h"
 #include "page_table.h"
 
-typedef struct {
+typedef struct
+{
   bool valid;
   bool dirty;
   uint64_t last_access;
@@ -37,7 +38,8 @@ uint64_t get_total_tlb_l2_hits() { return tlb_l2_hits; }
 uint64_t get_total_tlb_l2_misses() { return tlb_l2_misses; }
 uint64_t get_total_tlb_l2_invalidations() { return tlb_l2_invalidations; }
 
-void tlb_init() {
+void tlb_init()
+{
   memset(tlb_l1, 0, sizeof(tlb_l1));
   memset(tlb_l2, 0, sizeof(tlb_l2));
   tlb_l1_hits = 0;
@@ -48,17 +50,29 @@ void tlb_init() {
   tlb_l2_invalidations = 0;
 }
 
-void tlb_invalidate(va_t virtual_page_number) {
-  (void)(virtual_page_number);  // Suppress unused variable warning. You can
-                                // delete this when implementing the actual
-                                // function.
+void tlb_invalidate(va_t virtual_page_number)
+{
   // TODO: implement TLB entry invalidation.
+  for (int i = 0; i < TLB_L1_SIZE; i++)
+  {
+    if (tlb_l1[i].virtual_page_number == virtual_page_number)
+    {
+      tlb_l1_hits++;
+      tlb_l1[i].last_access = get_time();
+      tlb_l1[i].valid = false;
+      tlb_l1_invalidations++;
+    }
+  }
+  tlb_l1_misses++;
 }
 
-pa_dram_t tlb_translate(va_t virtual_address, op_t op) {
+pa_dram_t tlb_translate(va_t virtual_address, op_t op)
+{
   // TODO: implement the TLB logic.
-  for (int i = 0; i < TLB_L1_SIZE; i++) {
-    if (tlb_l1[i].virtual_page_number == (virtual_address >> PAGE_OFFSET_BITS)) {
+  for (int i = 0; i < TLB_L1_SIZE; i++)
+  {
+    if (tlb_l1[i].virtual_page_number == (virtual_address >> PAGE_OFFSET_BITS))
+    {
       tlb_l1_hits++;
       tlb_l1[i].last_access = get_time();
       if (op == OP_WRITE)
@@ -71,11 +85,13 @@ pa_dram_t tlb_translate(va_t virtual_address, op_t op) {
   int lru_index = 0;
   uint64_t min_access = tlb_l1[0].last_access;
 
-  for (int i = 1; i < TLB_L1_SIZE; i++) {
-      if (tlb_l1[i].last_access < min_access) {
-          min_access = tlb_l1[i].last_access;
-          lru_index = i;
-      }
+  for (int i = 1; i < TLB_L1_SIZE; i++)
+  {
+    if (tlb_l1[i].last_access < min_access)
+    {
+      min_access = tlb_l1[i].last_access;
+      lru_index = i;
+    }
   }
 
   tlb_l1[lru_index].virtual_page_number = virtual_address >> PAGE_OFFSET_BITS;
@@ -86,4 +102,3 @@ pa_dram_t tlb_translate(va_t virtual_address, op_t op) {
 
   return page_table_translate(virtual_address, op);
 }
-
