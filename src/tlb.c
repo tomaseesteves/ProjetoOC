@@ -59,6 +59,7 @@ void tlb_invalidate(va_t virtual_page_number)
     {
       tlb_l1[i].valid = false;
       tlb_l1_invalidations++;
+      break;
     }
   }
 }
@@ -68,34 +69,66 @@ pa_dram_t tlb_translate(va_t virtual_address, op_t op)
   // TODO: implement the TLB logic.
   for (int i = 0; i < TLB_L1_SIZE; i++)
   {
-    if (tlb_l1[i].virtual_page_number == (virtual_address >> PAGE_OFFSET_BITS))
+    // If page if found:
+    if (tlb_l1[i].virtual_page_number == ((virtual_address >> PAGE_SIZE_BITS) & PAGE_INDEX_MASK))
     {
       tlb_l1_hits++;
       tlb_l1[i].last_access = get_time();
+      va_t virtual_page_offset = virtual_address & PAGE_OFFSET_MASK;
       if (op == OP_WRITE)
         tlb_l1[i].dirty = true;
-      return tlb_l1[i].physical_page_number;
+
+      // Translate virtual address 
+      pa_dram_t translated_address = (tlb_l1[i].physical_page_number << PAGE_SIZE_BITS) | virtual_page_offset;
+      increment_time(TLB_L1_LATENCY_NS);
+
+      return translated_address;
     }
   }
 
+  // In case entry doesn't exist in TLB, finds empty entry or uses LRU replacement
+  int new_index = 0;
   tlb_l1_misses++;
-  int lru_index = 0;
-  uint64_t min_access = tlb_l1[0].last_access;
 
-  for (int i = 1; i < TLB_L1_SIZE; i++)
-  {
-    if (tlb_l1[i].last_access < min_access)
+  // Full TLB -> LRU replacement
+  if (sizeof(tlb_l1) / sizeof(tlb_l1[0]) == TLB_L1_SIZE) {
+    uint64_t min_access = tlb_l1[0].last_access;
+    for (int i = 1; i < TLB_L1_SIZE; i++)
     {
-      min_access = tlb_l1[i].last_access;
-      lru_index = i;
+      if (tlb_l1[i].last_access < min_access)
+      {
+        min_access = tlb_l1[i].last_access;
+        new_index = i;
+      }
+    }  
+  }
+  // TLB has empty entries, looks sequentially for one
+  else {
+    for (int i = 1; i < TLB_L1_SIZE; i++)
+    {
+      if (!tlb_l1[i].valid)
+      {
+        new_index = i;
+        break;
+      }
     }
   }
+  
+  // Translates virtual address to physical address
+  increment_time(TLB_L1_LATENCY_NS);
+  pa_dram_t translated_access = page_table_translate(virtual_address, op);
 
-  tlb_l1[lru_index].virtual_page_number = virtual_address >> PAGE_OFFSET_BITS;
-  tlb_l1[lru_index].physical_page_number = page_table_translate(virtual_address, op);
-  tlb_l1[lru_index].last_access = get_time();
-  tlb_l1[lru_index].valid = true;
-  tlb_l1[lru_index].dirty = (op == OP_WRITE);
+  log_dbg("Evicting TLB L1 entry i=%d VPN=%" PRIu64 " PPN=%" PRIu64 " valid=%d dirty=%d...",
+      new_index, tlb_l1[new_index].virtual_page_number, 
+      tlb_l1[new_index].physical_page_number, 
+      tlb_l1[new_index].valid, tlb_l1[new_index].dirty
+  );
 
-  return page_table_translate(virtual_address, op);
+  tlb_l1[new_index].virtual_page_number = (virtual_address >> PAGE_SIZE_BITS) & PAGE_INDEX_MASK;
+  tlb_l1[new_index].physical_page_number = (translated_access >> PAGE_SIZE_BITS) & PAGE_INDEX_MASK;
+  tlb_l1[new_index].last_access = get_time();
+  tlb_l1[new_index].valid = true;
+  tlb_l1[new_index].dirty = (op == OP_WRITE);
+
+  return translated_access;
 }
